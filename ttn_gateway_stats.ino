@@ -1,3 +1,5 @@
+#include <ArduinoJson.h>
+
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -14,16 +16,23 @@
 #define BUTTON_B 16
 #define BUTTON_C  2
 
-const char* apiUri = "http://noc.thethingsnetwork.org:8085/api/v2/gateways/";
+#define SIXTY_SECONDS 60000
 
-const char* gateway_a = "puphaus-1"
-const char* gateway_b = "puphaus-2"
-const char* gateway_c = "puphaus-1"
+const String apiUri = "http://noc.thethingsnetwork.org:8085/api/v2/gateways/";
 
-Adafruit_7segment display_received = Adafruit_7segment(); // Green
-Adafruit_7segment display_sent = Adafruit_7segment(); // Blue
+const String gatewayA = "puphaus-1";
+const String gatewayB = "smerty";
+const String gatewayC = "skycentricslora";
+
+// Hardware Bits
+Adafruit_7segment displayReceived = Adafruit_7segment(); // Green
+Adafruit_7segment displaySent = Adafruit_7segment(); // Blue
 Adafruit_FeatherOLED oled = Adafruit_FeatherOLED();
 ESP8266WiFiMulti wifi;
+
+// Globals
+char* currentGateway = "a";
+unsigned long last_update;
 
 void setup() {
   Serial.begin(115200);
@@ -33,14 +42,13 @@ void setup() {
   pinMode(BUTTON_C, INPUT_PULLUP);
 
   // init 7-segments
-  display_received.begin(0x70);
-  display_received.print(0,DEC);
-  display_received.writeDisplay();
+  displayReceived.begin(0x70);
+  displayReceived.print(0,DEC);
+  displayReceived.writeDisplay();
   
-  display_sent.begin(0x71);
-  display_sent.print(0,DEC);
-  display_sent.writeDisplay();
-  
+  displaySent.begin(0x71);
+  displaySent.print(0,DEC);
+  displaySent.writeDisplay();
 
   // init display
   oled.init();
@@ -69,33 +77,104 @@ void setup() {
     delay(1000);
   }
   
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  
-  oled.clearDisplay();
-  oled.setCursor(0, 0),
-  oled.println("WiFi connected");
-  oled.println("IP address: ");
-  oled.println(WiFi.localIP());
-  oled.display();
-  
-  delay(1000);
+  setOledDisplay(gatewayA);
+  updateDisplay();
 }
 
 void loop() {
+  if(!digitalRead(BUTTON_A)) buttonA();
+  if(!digitalRead(BUTTON_B)) buttonB();
+  if(!digitalRead(BUTTON_C)) buttonC();
+  
+  if (millis() > last_update + SIXTY_SECONDS) {
+    updateDisplay();
+  }
+}
+
+void buttonA() {
+  currentGateway = "a";
+  setOledDisplay(gatewayA);
+  updateDisplay();
+}
+
+void buttonB() {
+  currentGateway = "b";
+  setOledDisplay(gatewayB);
+  updateDisplay();
+}
+
+void buttonC() {
+  currentGateway = "c";
+  setOledDisplay(gatewayC);
+  updateDisplay();
+}
+
+void updateDisplay() {
+  if ((wifi.run() == WL_CONNECTED)) {
+    HTTPClient http;
+
+    if (currentGateway == "a") {
+      http.begin(apiUri + gatewayA);
+    }
+    else if (currentGateway == "b") {
+      http.begin(apiUri + gatewayB);
+    }
+    else {
+      http.begin(apiUri + gatewayC);
+    }
+
+    int httpCode = http.GET();
+    
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK) {
+        String payload = http.getString();
+        
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& gatewayInfo = jsonBuffer.parseObject(payload);
+        
+        if (!gatewayInfo.success()) {
+          Serial.println("parseObject() failed");
+        }
+        else {
+          String sent = gatewayInfo["downlink"];
+          setSentDisplay(sent.toInt());
+          
+          String received = gatewayInfo["uplink"];
+          setSentDisplay(received.toInt());
+        }
+      }
+    } else {
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+  }
+
+  last_update = millis();
+}
+
+void setOledDisplay(String text) {
   oled.clearDisplay();
   oled.setFont(&FreeMono12pt7b);
   oled.setCursor(0, 20),
-  oled.print("meow!");
+  oled.print(text);
   oled.display();
   
-  // put your main code here, to run repeatedly:
-  delay(1000);
-  
-  if (wifi.run() != WL_CONNECTED) {
-    Serial.println("WiFi not connected!");
-    delay(1000);
-  }
+}
 
+void setReceivedDisplay(unsigned long count) {
+    Serial.print("Received: ");
+    Serial.println(count, DEC);
+    displayReceived.println(count % 10000, DEC);
+    displayReceived.writeDisplay();
+}
+
+void setSentDisplay(unsigned long count) {
+    Serial.print("Sent: ");
+    Serial.println(count, DEC);
+    displaySent.println(count % 10000, DEC);
+    displaySent.writeDisplay();
 }
