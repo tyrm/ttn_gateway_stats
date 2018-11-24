@@ -42,11 +42,11 @@ void setup() {
   pinMode(BUTTON_C, INPUT_PULLUP);
 
   // init 7-segments
-  displayReceived.begin(0x70);
+  displayReceived.begin(0x71);
   displayReceived.print(0,DEC);
   displayReceived.writeDisplay();
   
-  displaySent.begin(0x71);
+  displaySent.begin(0x70);
   displaySent.print(0,DEC);
   displaySent.writeDisplay();
 
@@ -145,7 +145,7 @@ void updateDisplay() {
           setSentDisplay(sent.toInt());
           
           String received = gatewayInfo["uplink"];
-          setSentDisplay(received.toInt());
+          setReceivedDisplay(received.toInt());
         }
       }
     } else {
